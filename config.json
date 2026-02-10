@@ -1,0 +1,3 @@
+
+config.json { "texts": { "title": "TERRABLOX" }, "orientation": "landscape", "physics": { "gravityY": 2200 }, "world": { "tileSize": 48, "screensLong": 5 }, "ui": { "showHealth": true, "showBiome": true }, "gameplay": { "player": { "hpStart": 100, "hpRegenMaxPerSecond": 2, "hpRegenDelayAfterHitMs": 1000, "hpRegenRampSeconds": 3, "defaultSwordCooldown": 0.6, "defaultSwordDamage": 10 } } }
+

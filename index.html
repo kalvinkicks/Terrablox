@@ -1,0 +1,591 @@
+<!doctype html> <html> <head> <meta charset="utf-8" /> <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" /> <title>TERRABLOX</title> <style> html, body { margin:0; padding:0; background:#05060a; overflow:hidden; } canvas { display:block; margin:0 auto; } </style> <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script> </head> <body> <script> class BootScene extends Phaser.Scene { constructor(){ super('BootScene'); } preload(){ this.load.json('config', 'config.json'); } create(){ this.scene.start('GameScene'); } }
+class GameScene extends Phaser.Scene { constructor(){ super('GameScene'); this.state = 'menu'; // menu, options, play, win this.world = null; }
+
+clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+loadSettings(){ const defaults = { mobileEnabled: false, volume: 0.6, automakerCode: '' }; let s = null; try { s = JSON.parse(localStorage.getItem('terrablox_settings') || 'null'); } catch(e){} this.settings = Object.assign({}, defaults, s || {}); this.settings.volume = this.clamp(Number(this.settings.volume ?? 0.6), 0, 1); this.settings.mobileEnabled = !!this.settings.mobileEnabled; this.settings.automakerCode = String(this.settings.automakerCode ?? '').trim(); } saveSettings(){ localStorage.setItem('terrablox_settings', JSON.stringify(this.settings)); }
+
+parseCode(raw){ const code = (raw || '').trim().toLowerCase(); const flags = { coldSnap: false, wasted: false, iWantToFly: false, shrined: false, challenge: false, godMode: false, code }; if(code === 'coldsnap') flags.coldSnap = true; if(code === 'wasted') flags.wasted = true; if(code === 'iwanttofly') flags.iWantToFly = true; if(code === 'shrined') flags.shrined = true; if(code === 'challenge') flags.challenge = true; if(code === 'godmodehehe') flags.godMode = true; if(flags.godMode) flags.iWantToFly = true; return flags; }
+
+create(){ this.cfg = this.cache.json.get('config') || {}; this.loadSettings(); this.flags = this.parseCode(this.settings.automakerCode);
+
+this.sound.volume = this.settings.volume;
+
+this.keys = this.input.keyboard.addKeys({
+  A: Phaser.Input.Keyboard.KeyCodes.A,
+  D: Phaser.Input.Keyboard.KeyCodes.D,
+  W: Phaser.Input.Keyboard.KeyCodes.W,
+  S: Phaser.Input.Keyboard.KeyCodes.S,
+  SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
+  ESC: Phaser.Input.Keyboard.KeyCodes.ESC,
+  ENTER: Phaser.Input.Keyboard.KeyCodes.ENTER
+});
+
+this.cameras.main.setBackgroundColor(0x05060a);
+
+this.buildStarfield();
+
+this.ui = this.add.container(0,0).setScrollFactor(0);
+
+this.msgText = this.add.text(960, 60, '', {
+  fontFamily: 'Arial',
+  fontSize: '34px',
+  color: '#ffffff',
+  stroke: '#000000',
+  strokeThickness: 6
+}).setOrigin(0.5).setScrollFactor(0).setDepth(1000);
+
+this.showMenu();
+}
+
+buildStarfield(){ this.stars = []; const w = 1920, h = 1080; for(let i=0;i<220;i++){ const x = Math.random()*w; const y = Math.random()*h; const r = Math.random() < 0.85 ? 1 : 2; const c = Math.random() < 0.6 ? 0xffffff : (Math.random()<0.5?0xaad7ff:0xffd9aa); const g = this.add.circle(x,y,r,c, 0.9).setScrollFactor(0); g.tw = (Math.random()*0.8)+0.2; g.twDir = Math.random()<0.5 ? 1 : -1; this.stars.push(g); } this.neb1 = this.add.ellipse(500, 300, 900, 600, 0x3a1a66, 0.10).setScrollFactor(0); this.neb2 = this.add.ellipse(1500, 700, 1000, 700, 0x1a4a66, 0.10).setScrollFactor(0); }
+
+updateStarfield(dt){ const t = dt/1000; for(const s of this.stars){ s.tw += s.twDir * t * 0.35; if(s.tw > 1.0){ s.tw = 1.0; s.twDir = -1; } if(s.tw < 0.25){ s.tw = 0.25; s.twDir = 1; } s.setAlpha(0.15 + 0.85*s.tw); } }
+
+clearUI(){ this.ui.removeAll(true); this.msgText.setText(''); }
+
+makeButton(x,y,label,onClick, w=520, h=90){ const bg = this.add.rectangle(x,y,w,h,0x0b1220,0.85).setStrokeStyle(4, 0xffffff, 0.35); const tx = this.add.text(x,y,label,{ fontFamily:'Arial', fontSize:'44px', color:'#ffffff' }).setOrigin(0.5); const hit = this.add.rectangle(x,y,w,h,0x000000,0.001).setInteractive({ useHandCursor:true }); hit.on('pointerdown', ()=>onClick()); hit.on('pointerover', ()=>bg.setFillStyle(0x132544, 0.95)); hit.on('pointerout', ()=>bg.setFillStyle(0x0b1220, 0.85)); const c = this.add.container(0,0,[bg,tx,hit]).setScrollFactor(0); this.ui.add(c); return c; }
+
+showMenu(){ this.state = 'menu'; this.clearUI();
+
+const title = this.add.text(960, 200, 'TERRABLOX', {
+  fontFamily:'Arial Black, Arial',
+  fontSize:'110px',
+  color:'#f1f6ff',
+  stroke:'#000000',
+  strokeThickness: 12
+}).setOrigin(0.5).setScrollFactor(0);
+
+const subtitle = this.add.text(960, 300, 'A tiny Terraria-style adventure (browser build)', {
+  fontFamily:'Arial',
+  fontSize:'32px',
+  color:'#b8c7ff'
+}).setOrigin(0.5).setScrollFactor(0);
+
+this.makeButton(960, 470, 'PLAY', ()=>this.startRun());
+this.makeButton(960, 590, 'OPTIONS', ()=>this.showOptions());
+
+const mobileLabel = ()=>'MOBILE: ' + (this.settings.mobileEnabled ? 'ON' : 'OFF');
+this.mobileBtn = this.makeButton(960, 710, mobileLabel(), ()=>{
+  this.settings.mobileEnabled = !this.settings.mobileEnabled;
+  this.saveSettings();
+  this.mobileBtn.list[1].setText(mobileLabel());
+});
+
+const tip = this.add.text(960, 865,
+  'Tip: Options → world gen automaker codes: COLDSNAP, WASTED, IWANTTOFLY, SHRINED, CHALLENGE, GODMODEHEHE',
+  { fontFamily:'Arial', fontSize:'24px', color:'#d7e0ff', align:'center', wordWrap:{ width: 1500 } }
+).setOrigin(0.5).setScrollFactor(0);
+
+this.ui.add(title);
+this.ui.add(subtitle);
+this.ui.add(tip);
+
+this.msgText.setText('Goal: Beat The Mutant → kill The Old Man → defeat Ichor the Radiant!');
+}
+
+showOptions(){ this.state = 'options'; this.clearUI();
+
+const title = this.add.text(960, 150, 'OPTIONS', {
+  fontFamily:'Arial Black, Arial',
+  fontSize:'84px',
+  color:'#f1f6ff',
+  stroke:'#000000',
+  strokeThickness: 10
+}).setOrigin(0.5).setScrollFactor(0);
+
+const volLabel = this.add.text(960, 290, 'SOUND VOLUME', {
+  fontFamily:'Arial',
+  fontSize:'36px',
+  color:'#ffffff'
+}).setOrigin(0.5).setScrollFactor(0);
+
+const barX = 960, barY = 360, barW = 900, barH = 26;
+const barBg = this.add.rectangle(barX, barY, barW, barH, 0xffffff, 0.18).setScrollFactor(0);
+const barFill = this.add.rectangle(barX - barW/2, barY, barW * this.settings.volume, barH, 0x77ddff, 0.9)
+  .setOrigin(0,0.5).setScrollFactor(0);
+const knob = this.add.circle(barX - barW/2 + barW*this.settings.volume, barY, 18, 0xffffff, 0.95)
+  .setScrollFactor(0).setStrokeStyle(3, 0x000000, 0.4);
+
+const sliderHit = this.add.rectangle(barX, barY, barW, 80, 0x000000, 0.001).setInteractive();
+const setVolFromPointer = (px)=>{
+  const local = this.clamp((px - (barX - barW/2)) / barW, 0, 1);
+  this.settings.volume = local;
+  this.sound.volume = local;
+  barFill.width = barW * local;
+  knob.x = barX - barW/2 + barW*local;
+  this.saveSettings();
+};
+sliderHit.on('pointerdown', (p)=>setVolFromPointer(p.x));
+sliderHit.on('pointermove', (p)=>{ if(p.isDown) setVolFromPointer(p.x); });
+
+const boxLabel = this.add.text(960, 465, 'world gen automaker', {
+  fontFamily:'Arial',
+  fontSize:'34px',
+  color:'#ffffff'
+}).setOrigin(0.5).setScrollFactor(0);
+
+const dom = this.add.dom(960, 540).createFromHTML(`
+  <div style="width:760px; text-align:center;">
+    <input id="codeBox" type="text"
+      value="${this.settings.automakerCode.replace(/"/g,'&quot;')}"
+      placeholder="type a code… (COLDSNAP / WASTED / …)"
+      style="width:760px; font-size:26px; padding:12px 14px; border-radius:10px; border:3px solid rgba(255,255,255,0.35); background:rgba(10,15,25,0.9); color:#ffffff; outline:none;" />
+    <div style="margin-top:10px; font-size:18px; color:rgba(220,230,255,0.85); font-family:Arial;">
+      Press ENTER to save • Codes are case-insensitive
+    </div>
+  </div>
+`).setScrollFactor(0);
+
+const hint = this.add.text(960, 645,
+  'Codes: COLDSNAP (all snow), WASTED (all wastes), IWANTTOFLY (infinite jumps), SHRINED (shrines above ground), CHALLENGE (2x mob hp + bosses 2x dmg + bigger wastes), GODMODEHEHE (invincible + infinite jumps)',
+  { fontFamily:'Arial', fontSize:'22px', color:'#d7e0ff', align:'center', wordWrap:{ width: 1500 } }
+).setOrigin(0.5).setScrollFactor(0);
+
+this.makeButton(960, 910, 'BACK', ()=>{
+  try{
+    const el = dom.getChildByID('codeBox');
+    this.settings.automakerCode = (el?.value || '').trim();
+    this.saveSettings();
+    this.flags = this.parseCode(this.settings.automakerCode);
+  }catch(e){}
+  dom.destroy();
+  this.showMenu();
+}, 520, 90);
+
+this.ui.add(title);
+this.ui.add(volLabel);
+this.ui.add(barBg);
+this.ui.add(barFill);
+this.ui.add(knob);
+this.ui.add(sliderHit);
+this.ui.add(boxLabel);
+this.ui.add(dom);
+this.ui.add(hint);
+
+this.input.keyboard.once('keydown-ENTER', ()=>{
+  try{
+    const el = dom.getChildByID('codeBox');
+    this.settings.automakerCode = (el?.value || '').trim();
+    this.saveSettings();
+    this.flags = this.parseCode(this.settings.automakerCode);
+    this.msgText.setText('Saved!');
+    this.time.delayedCall(900, ()=>{ if(this.state==='options') this.msgText.setText(''); });
+  }catch(e){}
+});
+}
+
+startRun(){ this.clearUI(); this.state = 'play';
+
+this.loadSettings();
+this.flags = this.parseCode(this.settings.automakerCode);
+
+this.buildWorld();
+this.buildPlayer();
+this.buildHUD();
+if(this.settings.mobileEnabled) this.buildMobileControls();
+
+this.showMessage('Explore. Break a Waste Chamber to summon The Mutant!', 2400);
+}
+
+buildWorld(){ this.physics.world.gravity.y = (this.cfg.physics?.gravityY ?? 2200); this.physics.world.setBounds(0,0,1920*5, 1080);
+
+const W = 1920*5;
+const H = 1080;
+const tile = this.cfg.world?.tileSize ?? 48;
+const cols = Math.floor(W / tile);
+const rows = Math.floor(H / tile);
+
+const rng = this.flags.code ? this.makeRng(this.hashCode(this.flags.code)) : this.makeRng(Math.floor(Math.random()*999999));
+
+let segments = [];
+if(this.flags.coldSnap){
+  segments = [{name:'snow', start:0, end:cols}];
+} else if(this.flags.wasted){
+  segments = [{name:'wastes', start:0, end:cols}];
+} else {
+  const forestLen = Math.floor(cols * 0.26);
+  let wastesLen = Math.floor(cols * (this.flags.challenge ? 0.34 : 0.22));
+  const rem = cols - forestLen - wastesLen;
+  const each = Math.floor(rem/2);
+  segments = [
+    {name:'forest', start:0, end:forestLen},
+    {name:'snow', start:forestLen, end:forestLen+each},
+    {name:'desert', start:forestLen+each, end:forestLen+each*2},
+    {name:'wastes', start:forestLen+each*2, end:cols}
+  ];
+}
+
+const container = this.add.container(0,0);
+this.world = { container, tile, cols, rows, widthPx: cols*tile, heightPx: rows*tile, segments, rng };
+
+this.world.biomeAtCol = (c)=>{
+  for(const s of segments) if(c>=s.start && c<s.end) return s.name;
+  return segments[0].name;
+};
+
+this.world.solids = this.physics.add.staticGroup();
+this.world.hazards = this.physics.add.staticGroup();
+this.world.triggers = this.physics.add.staticGroup();
+this.world.enemies = this.physics.add.group();
+this.world.projectiles = this.physics.add.group({ allowGravity:false });
+
+const baseSurface = Math.floor(rows * 0.52);
+const noise = [];
+let y = baseSurface;
+for(let c=0;c<cols;c++){
+  y += Math.floor((rng()-0.5) * 2.2);
+  y = this.clamp(y, Math.floor(rows*0.44), Math.floor(rows*0.62));
+  noise[c]=y;
+}
+
+const palette = {
+  forest: { top:0x2b6c3a, dirt:0x6b4a2b, stone:0x5d6268 },
+  snow:   { top:0xdaf3ff, dirt:0x8bb7cc, stone:0x6a9bb3 },
+  desert: { top:0xf3d072, dirt:0xcda24b, stone:0xb68a45 },
+  wastes: { top:0x71ff62, dirt:0x3d6a39, stone:0x2f3f2d }
+};
+
+const makeTile = (x,y,color)=>{
+  const r = this.add.rectangle(x+tile/2, y+tile/2, tile-2, tile-2, color, 1).setDepth(1);
+  container.add(r);
+  const b = this.add.rectangle(x+tile/2, y+tile/2, tile, tile, 0x000000, 0);
+  this.physics.add.existing(b, true);
+  this.world.solids.add(b);
+  b._vis = r;
+  return b;
+};
+
+for(let c=0;c<cols;c++){
+  const biome = this.world.biomeAtCol(c);
+  const pal = palette[biome] || palette.forest;
+  const surf = noise[c];
+
+  makeTile(c*tile, surf*tile, pal.top);
+  for(let r=surf+1; r<rows; r++){
+    const depth = r - surf;
+    const color = depth > 10 ? pal.stone : pal.dirt;
+    makeTile(c*tile, r*tile, color);
+  }
+
+  if(biome==='desert' && rng() < 0.055){
+    const cx = c*tile + tile/2;
+    const cy = (surf-1)*tile + tile/2;
+    const cactus = this.add.rectangle(cx, cy-15, 18, 72, 0x2ecc71, 1).setDepth(2);
+    container.add(cactus);
+    const hz = this.add.rectangle(cx, cy-15, 40, 86, 0x000000, 0);
+    this.physics.add.existing(hz, true);
+    hz.hazardType = 'cactus';
+    this.world.hazards.add(hz);
+  }
+}
+
+this.world.wasteChambers = [];
+const wastesSeg = segments.find(s=>s.name==='wastes') || segments[segments.length-1];
+const chamberCount = 3;
+for(let i=0;i<chamberCount;i++){
+  const col = Math.floor(Phaser.Math.Linear(wastesSeg.start+12, wastesSeg.end-12, rng()));
+  const surf = noise[col];
+  const x = col*tile + tile*2;
+  const y = (surf-2)*tile;
+  const w = tile*6, h = tile*3;
+
+  const box = this.add.rectangle(x+w/2, y+h/2, w, h, 0x193018, 0.85).setStrokeStyle(6, 0x92ff7d, 0.5).setDepth(3);
+  container.add(box);
+
+  const core = this.add.rectangle(box.x, box.y, tile*1.2, tile*1.2, 0x6fe66a, 1).setDepth(4).setStrokeStyle(4, 0x000000, 0.35);
+  container.add(core);
+
+  const trig = this.add.rectangle(core.x, core.y, tile*3, tile*2, 0x000000, 0);
+  this.physics.add.existing(trig, true);
+  trig.triggerType = 'wasteChamber';
+  trig._hp = 40;
+  trig._broken = false;
+  this.world.triggers.add(trig);
+
+  this.world.wasteChambers.push({ trigger: trig, coreVis: core });
+}
+
+this.progress = { mutantDefeated:false, oldManSpawned:false, ichorSpawned:false, ichorDefeated:false };
+
+this.cameras.main.setBounds(0,0,this.world.widthPx,1080);
+}
+
+buildPlayer(){ const tile = this.world.tile; const spawnX = tile * 6; const spawnY = tile * 6;
+
+const spr = this.add.rectangle(spawnX, spawnY, 44, 72, 0x66aaff, 1).setDepth(10);
+this.physics.add.existing(spr);
+spr.body.setSize(44,72);
+spr.body.setCollideWorldBounds(true);
+spr.body.setMaxVelocity(520, 1200);
+spr.body.setDragX(1400);
+
+this.physics.add.collider(spr, this.world.solids);
+
+this.physics.add.overlap(spr, this.world.hazards, (p,hz)=>{
+  if(hz.hazardType==='cactus') this.damagePlayer(8);
+});
+
+this.player = {
+  sprite: spr,
+  hpMax: 100,
+  hp: 100,
+  defense: 0,
+  damageReduction: 0,
+  invincible: this.flags.godMode,
+  canInfiniteJump: this.flags.iWantToFly,
+  lastHitAt: -9999,
+  regenRamp: 0,
+  debuffs: {
+    frozenUntil: 0, poisonUntil: 0, atomicUntil: 0, onFireUntil: 0,
+    oldUntil: 0, cursedStunUntil: 0, cursedImmuneUntil: 0
+  },
+  jumpsLeft: 1,
+  jumpHeld: false,
+  attackCd: 0,
+  baseSwordCooldown: (this.cfg.gameplay?.player?.defaultSwordCooldown ?? 0.6),
+  baseSwordDamage: (this.cfg.gameplay?.player?.defaultSwordDamage ?? 10)
+};
+
+this.cameras.main.startFollow(spr, true, 0.12, 0.12);
+}
+
+buildHUD(){ const hud = this.add.container(0,0).setScrollFactor(0).setDepth(2000);
+
+const hpBg = this.add.rectangle(180, 60, 320, 26, 0xffffff, 0.15).setOrigin(0.5);
+const hpFill = this.add.rectangle(20, 60, 320, 26, 0xff4d6d, 0.9).setOrigin(0,0.5);
+const hpText = this.add.text(180, 60, 'HP: 100 / 100', {
+  fontFamily:'Arial Black, Arial',
+  fontSize:'18px',
+  color:'#ffffff',
+  stroke:'#000000',
+  strokeThickness: 5
+}).setOrigin(0.5);
+
+const biomeText = this.add.text(1740, 48, 'Biome: Forest', {
+  fontFamily:'Arial Black, Arial',
+  fontSize:'20px',
+  color:'#ffffff',
+  stroke:'#000000',
+  strokeThickness: 6
+}).setOrigin(1,0.5);
+
+const hint = this.add.text(960, 1040,
+  'Controls: A/D move • W jump • S slam • SPACE attack • ESC menu',
+  { fontFamily:'Arial', fontSize:'22px', color:'#d7e0ff' }
+).setOrigin(0.5);
+
+const debText = this.add.text(180, 95, '', { fontFamily:'Arial', fontSize:'18px', color:'#e9f2ff' })
+  .setOrigin(0.5);
+
+hud.add([hpBg,hpFill,hpText,biomeText,hint,debText]);
+this.hud = hud;
+this.hud.hpFill = hpFill;
+this.hud.hpText = hpText;
+this.hud.biomeText = biomeText;
+this.hud.debText = debText;
+}
+
+buildMobileControls(){ const c = this.add.container(0,0).setScrollFactor(0).setDepth(3000);
+
+const makePadBtn = (x,y,w,h,label)=>{
+  const bg = this.add.rectangle(x,y,w,h,0x0b1220,0.55).setStrokeStyle(4, 0xffffff, 0.25);
+  const tx = this.add.text(x,y,label,{ fontFamily:'Arial Black, Arial', fontSize:'30px', color:'#ffffff' }).setOrigin(0.5);
+  const hit = this.add.rectangle(x,y,w,h,0x000000,0.001).setInteractive();
+  c.add([bg,tx,hit]);
+  return {hit};
+};
+
+const left = makePadBtn(140, 915, 130, 120, '◀');
+const right = makePadBtn(290, 915, 130, 120, '▶');
+const jump = makePadBtn(1760, 915, 150, 130, 'JUMP');
+const slam = makePadBtn(1600, 840, 120, 90, 'SLAM');
+const atk = makePadBtn(1760, 760, 150, 110, 'HIT');
+
+this.mobile = { left:false, right:false, jump:false, slam:false, attack:false };
+
+const setHeld = (btn, key)=>{
+  btn.hit.on('pointerdown', ()=>{ this.mobile[key]=true; });
+  btn.hit.on('pointerup', ()=>{ this.mobile[key]=false; });
+  btn.hit.on('pointerout', ()=>{ this.mobile[key]=false; });
+};
+setHeld(left,'left'); setHeld(right,'right'); setHeld(jump,'jump'); setHeld(slam,'slam'); setHeld(atk,'attack');
+
+this.mobileControls = c;
+}
+
+showMessage(txt, ms=1200){ this.msgText.setText(txt); this.time.delayedCall(ms, ()=>{ if(this.msgText.text===txt) this.msgText.setText(''); }); }
+
+applyDebuffToPlayer(type){ const now = this.time.now; const d = this.player.debuffs;
+
+if(type==='frozen') d.frozenUntil = Math.max(d.frozenUntil, now + 3000);
+if(type==='poison') d.poisonUntil = Math.max(d.poisonUntil, now + 1000);
+if(type==='atomic') d.atomicUntil = Math.max(d.atomicUntil, now + 3000);
+if(type==='onfire') d.onFireUntil = Math.max(d.onFireUntil, now + 3000);
+if(type==='old') d.oldUntil = Math.max(d.oldUntil, now + 3000);
+if(type==='cursed'){
+  if(now < d.cursedImmuneUntil) return;
+  d.cursedStunUntil = now + 2000;
+  d.cursedImmuneUntil = d.cursedStunUntil + 4000;
+}
+}
+
+damagePlayer(incoming){ if(!this.player || !this.player.sprite.active) return; if(this.player.invincible) return;
+
+const now = this.time.now;
+if(now - this.player.lastHitAt < 180) return;
+
+const def = this.player.defense || 0;
+const dr = this.clamp(this.player.damageReduction || 0, 0, 0.95);
+let dmg = Math.max(1, (incoming - def));
+dmg = Math.max(1, Math.floor(dmg * (1 - dr)));
+
+this.player.hp -= dmg;
+this.player.lastHitAt = now;
+this.player.regenRamp = 0;
+
+this.tweens.add({ targets: this.player.sprite, alpha: 0.35, yoyo:true, duration: 90, repeat: 2 });
+
+if(this.player.hp <= 0){
+  this.player.hp = 0;
+  this.onPlayerDeath();
+}
+}
+
+onPlayerDeath(){ this.showMessage('You got bonked! Respawning...', 1400); const p = this.player.sprite; p.setPosition(this.world.tile6, this.world.tile6); p.body.setVelocity(0,0); this.player.hp = this.player.hpMax; this.player.debuffs = { frozenUntil:0, poisonUntil:0, atomicUntil:0, onFireUntil:0, oldUntil:0, cursedStunUntil:0, cursedImmuneUntil:0 }; }
+
+update(time, delta){ this.updateStarfield(delta); if(this.state !== 'play') return;
+
+if(Phaser.Input.Keyboard.JustDown(this.keys.ESC)){
+  this.scene.restart();
+  return;
+}
+
+const p = this.player;
+const spr = p.sprite;
+const now = this.time.now;
+
+const col = Math.floor(spr.x / this.world.tile);
+const biome = this.world.biomeAtCol(col);
+this.hud.biomeText.setText('Biome: ' + biome.charAt(0).toUpperCase()+biome.slice(1));
+
+const frozen = now < p.debuffs.frozenUntil;
+const old = now < p.debuffs.oldUntil;
+const cursedStun = now < p.debuffs.cursedStunUntil;
+
+let moveMul = 1;
+if(frozen) moveMul *= 0.5;
+if(old) moveMul *= 0.8;
+
+let atkMul = 1;
+if(frozen) atkMul *= 0.5;
+
+if(cursedStun) spr.body.setVelocityX(0);
+
+const leftHeld = (!cursedStun) && (this.keys.A.isDown || (this.mobile?.left));
+const rightHeld = (!cursedStun) && (this.keys.D.isDown || (this.mobile?.right));
+const jumpPressed = (!cursedStun) && (Phaser.Input.Keyboard.JustDown(this.keys.W) || (this.mobile && this.mobile.jump && !p.jumpHeld));
+const jumpHeld = (!cursedStun) && (this.keys.W.isDown || (this.mobile?.jump));
+const slamPressed = (!cursedStun) && (Phaser.Input.Keyboard.JustDown(this.keys.S) || (this.mobile?.slam));
+const attackPressed = (!cursedStun) && (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || (this.mobile?.attack));
+
+p.jumpHeld = !!jumpHeld;
+
+const grounded = spr.body.blocked.down;
+if(grounded) p.jumpsLeft = 1;
+
+if(leftHeld) spr.body.setVelocityX(-360 * moveMul);
+else if(rightHeld) spr.body.setVelocityX(360 * moveMul);
+
+if(jumpPressed){
+  if(grounded){
+    spr.body.setVelocityY(-820);
+  } else {
+    if(p.canInfiniteJump){
+      spr.body.setVelocityY(-760);
+    } else if(p.jumpsLeft > 0){
+      p.jumpsLeft--;
+      spr.body.setVelocityY(-760);
+    }
+  }
+}
+
+if(slamPressed && !grounded){
+  spr.body.setVelocityY(Math.max(spr.body.velocity.y, 1100));
+}
+
+p.attackCd = Math.max(0, p.attackCd - (delta/1000));
+if(attackPressed && p.attackCd <= 0){
+  p.attackCd = (p.baseSwordCooldown / atkMul);
+  const dir = (rightHeld || (!leftHeld && spr.body.velocity.x >= 0)) ? 1 : -1;
+  const hitX = spr.x + dir*70;
+  const hitY = spr.y + 8;
+  const hitbox = this.add.rectangle(hitX, hitY, 120, 90, 0xffffff, 0.001);
+  this.physics.add.existing(hitbox);
+  hitbox.body.setAllowGravity(false);
+  hitbox.body.setImmovable(true);
+
+  this.physics.add.overlap(hitbox, this.world.triggers, (hb, tr)=>{
+    if(tr.triggerType==='wasteChamber' && !tr._broken){
+      tr._hp -= 10;
+      if(tr._hp <= 0){
+        tr._broken = true;
+        this.showMessage('WASTE CHAMBER BROKEN! (Bosses are in the bigger build)', 2200);
+      }
+    }
+  });
+
+  this.time.delayedCall(80, ()=>hitbox.destroy());
+}
+
+this.tickPlayerDots(delta);
+this.tickRegen(delta);
+this.updateHud();
+}
+
+tickPlayerDots(delta){ const now = this.time.now; const d = this.player.debuffs; const dt = delta/1000;
+
+if(now < d.poisonUntil){
+  this._poisonAcc = (this._poisonAcc || 0) + dt;
+  while(this._poisonAcc >= 0.1){ this._poisonAcc -= 0.1; this.damagePlayer(1); }
+} else this._poisonAcc = 0;
+
+if(now < d.atomicUntil){
+  this._atomicAcc = (this._atomicAcc || 0) + dt;
+  while(this._atomicAcc >= 1.0){ this._atomicAcc -= 1.0; this.damagePlayer(5); }
+} else this._atomicAcc = 0;
+
+if(now < d.onFireUntil){
+  this._fireAcc = (this._fireAcc || 0) + dt;
+  while(this._fireAcc >= 1.0){ this._fireAcc -= 1.0; this.damagePlayer(5); }
+} else this._fireAcc = 0;
+}
+
+tickRegen(delta){ const p = this.player; const now = this.time.now; if(p.hp <= 0 || p.hp >= p.hpMax) return; if(now - p.lastHitAt < 1000) return; if(now < p.debuffs.onFireUntil) return;
+
+p.regenRamp = this.clamp(p.regenRamp + (delta/1000)/3, 0, 1);
+const regenRate = 2 * p.regenRamp;
+p.hp = Math.min(p.hpMax, p.hp + regenRate * (delta/1000));
+}
+
+updateHud(){ const p = this.player; const ratio = p.hp / p.hpMax; this.hud.hpFill.width = 320 * ratio; this.hud.hpText.setText(HP: ${Math.floor(p.hp)} / ${p.hpMax});
+
+const now = this.time.now;
+const tags = [];
+if(now < p.debuffs.frozenUntil) tags.push('Frozen');
+if(now < p.debuffs.poisonUntil) tags.push('Poison');
+if(now < p.debuffs.atomicUntil) tags.push('Atomic');
+if(now < p.debuffs.onFireUntil) tags.push('On Fire');
+if(now < p.debuffs.oldUntil) tags.push('Old');
+if(now < p.debuffs.cursedStunUntil) tags.push('Cursed (stunned)');
+else if(now < p.debuffs.cursedImmuneUntil) tags.push('Curse-immune');
+this.hud.debText.setText(tags.length ? ('Debuffs: ' + tags.join(', ')) : '');
+}
+
+hashCode(str){ let h = 0; for(let i=0;i<str.length;i++){ h = ((h<<5)-h) + str.charCodeAt(i); h |= 0; } return Math.abs(h); } makeRng(seed){ let a = seed >>> 0; return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; } }
+
+const gameConfig = { type: Phaser.AUTO, width: 1920, height: 1080, parent: document.body, dom: { createContainer: true }, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } }, scene: [BootScene, GameScene] };
+
+new Phaser.Game(gameConfig); </script>
+
+</body> </html>
